@@ -255,21 +255,25 @@ export class FanXiaomiCard extends LitElement {
   }
 
   private setPresetMode(value) {
-    if (this.config.platform === "default") {
+    const attrs = this.hass.states[this.config.entity].attributes;
+    const supportsPresetMode = attrs["preset_modes"] && attrs["preset_modes"].length > 0;
+
+    if (supportsPresetMode || this.config.platform === "default") {
       this.hass.callService("fan", "set_preset_mode", {
         entity_id: this.config.entity,
         preset_mode: value,
       });
+      return;
+    }
+
+    if (value === "Nature") {
+      this.hass.callService(this.config.platform, "fan_set_natural_mode_on", {
+        entity_id: this.config.entity,
+      });
     } else {
-      if (value === "Nature") {
-        this.hass.callService(this.config.platform, "fan_set_natural_mode_on", {
-          entity_id: this.config.entity,
-        });
-      } else {
-        this.hass.callService(this.config.platform, "fan_set_natural_mode_off", {
-          entity_id: this.config.entity,
-        });
-      }
+      this.hass.callService(this.config.platform, "fan_set_natural_mode_off", {
+        entity_id: this.config.entity,
+      });
     }
   }
 
@@ -278,10 +282,7 @@ export class FanXiaomiCard extends LitElement {
    */
   private getPresetMode(): "nature" | "normal" | undefined {
     const attrs = this.hass.states[this.config.entity].attributes;
-    if (this.config.platform === "default") {
-      return attrs["preset_mode"]?.toLowerCase();
-    }
-    return attrs["mode"]?.toLowerCase();
+    return (attrs["preset_mode"] || attrs["mode"])?.toLowerCase();
   }
 
   private setLed(on: boolean) {
@@ -402,16 +403,16 @@ export class FanXiaomiCard extends LitElement {
   }
 
   private async configureAsync() {
-    if (this.config.platform === "default") {
-      const fanEntity = this.hass.states[this.config.entity];
-      if (!fanEntity) {
-        return;
-      }
+    const fanEntity = this.hass.states[this.config.entity];
+    if (!fanEntity) {
+      return;
+    }
 
-      this.deviceEntities = await this.findDeviceEntities();
-      this.checkFanFeatures(fanEntity.attributes);
-      this.checkFanAuxFeatures();
-    } else {
+    this.deviceEntities = await this.findDeviceEntities();
+    this.checkFanFeatures(fanEntity.attributes);
+    this.checkFanAuxFeatures();
+
+    if (this.config.platform !== "default") {
       const state = this.hass.states[this.config.entity];
       const attrs = state.attributes;
 
@@ -474,6 +475,7 @@ export class FanXiaomiCard extends LitElement {
   // https://lit.dev/docs/components/rendering/
   protected render(): TemplateResult | void {
     const state = this.hass.states[this.config.entity];
+    const stateUnavailable = state?.state === "unavailable";
 
     return html`
       <ha-card
@@ -482,10 +484,10 @@ export class FanXiaomiCard extends LitElement {
         tabindex="0"
         .label=${`Xiaomi Fan: ${this.config.entity || "No Entity Defined"}`}
       >
-        ${state === undefined || state.state === "unavailable"
+        ${state === undefined || stateUnavailable
           ? html`<hui-warning
               >Fan entity ${this.config.entity}
-              ${state.state === "unavailable" ? "is unavailable" : "was not found"}.</hui-warning
+              ${stateUnavailable ? "is unavailable" : "was not found"}.</hui-warning
             >`
           : this.renderContent()}
       </ha-card>
